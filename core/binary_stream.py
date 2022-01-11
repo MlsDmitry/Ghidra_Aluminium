@@ -34,7 +34,6 @@ class BinaryStream:
             self.write_ubyte(shifted_num)
 
     def write_string(self, string, encoding='ascii'):
-
         if isinstance(string, bytes):
             self.write_dd(len(string))
             self.write(string)
@@ -43,13 +42,17 @@ class BinaryStream:
             self.write_dd(len(encoded))
             self.write(encoded)
 
+    def write_vbuff(self, data: bytes):
+        self.write_dd(len(data))
+        self.write(data)
+
     def write(self, data: bytes):
         self.data.write(data)
 
     def write_byte(self, i8):
         buff = pack("!b", i8)
         self.data.write(buff)
-        
+
     def write_ubyte(self, i8):
         buff = pack('!B', i8)
         self.data.write(buff)
@@ -77,7 +80,7 @@ class BinaryStream:
     def write_l64(self, i64):
         buff = pack("<q", i64)
         self.data.write(buff)
-    
+
     def write_u16(self, i16):
         buff = pack("!H", i16)
         self.data.write(buff)
@@ -100,7 +103,7 @@ class BinaryStream:
 
     def write_lu64(self, i64):
         buff = pack("<Q", i64)
-        self.data.write(buff) 
+        self.data.write(buff)
 
     def read_l16(self):
         buff = self.data.read(2)
