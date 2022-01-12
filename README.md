@@ -1,2 +1,2 @@
 # Ghidra Aluminium
-Ghidra complete integration with IDA's Lumen server
+Ghidra complete integration with IDA's Lumina server
