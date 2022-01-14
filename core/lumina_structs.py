@@ -1,30 +1,13 @@
 import socket
 import construct as con
 from construct import (
-    Byte, Bytes, Int8ub, Int16ub, Int16ul, Int16sb, Int32ub, Int32ul, Int64ub,
+    Nibble, Byte, Bytes, Int8ub, Int16ub, Int16ul, Int16sb, Int32ub, Int32ul, Int64ub,
     CString, Hex,
-    Struct, Array, Const, Rebuild, len_, this, FormatField,
+    BitStruct, Struct, Array, Const, Rebuild, len_, this, FormatField,
     byte2int, int2byte, stream_read, stream_write, Construct, singleton, IntegerError, integertypes,
     Container,
     )
-
-SERVER_STUFF = {
-    "servers": [
-        #-------Address-------  -Port-  -allowToPushThere- -anonMode- -sendLicense-  -useTLS- -pathToTLSCert-
-        # ["lumina.hex-rays.com",    443,             False,      True,         True,    "OFF", ""],
-        [      "lumen.abda.nl",   1235,             False,      True,        False,    "OFF", ""]
-    ],
-
-    #
-    # anonMode - send to server random: md5 of input file, absolute file path of current idb, absolute file path of input file and machine name
-    #
-
-
-    # Use getIdaLicenseInfo to sniff and define the constants. It's only for connecting to lumina.hex-rays.com
-    "license": b"",
-    "id": 0,
-    "watermark": 0
-}
+from construct.core import BitsInteger
 
 IDA_PROTOCOLE_VERSION = 2
 
@@ -325,7 +308,7 @@ RpcMessage = con.Switch(this.code,
 rpc_packet_t = con.Struct(
     "length" / Rebuild(Hex(Int32ub), len_(this.data)),
     "code" / RPC_TYPE,
-    "data" / con.HexDump(con.Bytes(this.length))
+    "data" / con.HexDump(Bytes(this.length))
     )
 
 def rpc_message_build(code, **kwargs):
@@ -360,3 +343,241 @@ def rpc_message_parse(source):
     # Warning: parsing return a Container object wich hold a io.BytesIO to the socket
     # see https://github.com/construct/construct/issues/852
     return packet, message
+
+#######################################
+#
+# Lumina type info
+#
+#######################################
+
+TYPE_DECL_MODIF = con.Enum(IdaVarInt32,
+    SIGNED = 0x10,
+    UNSIGNED = 0x20,
+    CONST = 0x40,
+    VOLATILE = 0x80,
+    POINTER = 0x0a00,
+    __NORETURN = 0xaf01,
+    __HIDDEN = 0xff41,
+    __RETURN_PTR = 0xff42,
+    __STRUCT_PTR = 0xff43,
+    __ARRAY_PTR = 0xff48,
+    )
+
+# @singleton
+# class Argument(Construct):
+#     r"""
+#     construct adapter that parses FUNC_DEF's arguments
+#     """
+
+#     def _parse(self, stream, context, path):
+#         b = byte2int(stream_read(stream, 1, path))
+        
+
+
+#         return arg
+
+#     def _build(self, obj, stream, context, path):
+#         if not isinstance(obj, integertypes):
+#             raise IntegerError("value is not an integer", path=path)
+#         if obj < 0:
+#             raise IntegerError("cannot build from negative number: %r" % (obj,), path=path)
+#         if obj > 0xFFFF:
+#             raise IntegerError("cannot build from number above short range: %r" % (obj,), path=path)
+
+#         x = obj
+
+#         if (x > 0x3FFF):
+#             x |= 0xFF0000
+#             nbytes = 3
+#         elif (x > 0x7F):
+#             x |= 0x8000
+#             nbytes = 2
+#         else:
+#             nbytes = 1
+
+#         for i in range(nbytes, 0, -1):
+#             stream_write(stream, int2byte((x >> (8*(i-1))) & 0xFF), 1, path)
+
+#         return obj
+
+TYPE_DECL = con.Enum(IdaVarInt32,
+    VOID         = 0x01,
+
+    __INT8       = 0x02,
+    CHAR         = 0x32,
+
+    __INT16      = 0x03,
+
+    __INT32      = 0x04,
+
+    __INT64      = 0x05,
+
+    __INT128     = 0x06,
+
+    INT          = 0x07,
+    __SEG        = 0x37,
+
+    BOOL         = 0x08,
+    _BOOL1       = 0x18,
+    _BOOL2       = 0x28,
+    _BOOL4       = 0x38,
+    _BOOL8       = 0x48,
+    
+    FLOAT        = 0x09,
+    DOUBLE       = 0x19,
+    LONG_DOUBLE  = 0x29,
+    SHORT_FLOAT  = 0x39, # conflicting with _TBYTE
+    )
+
+TYPE_CONST = con.Enum(IdaVarInt32,
+    _WORD        = 0x10,
+    _QWORD       = 0x20,
+    _UNKNOWN     = 0x30,
+    
+    _BYTE        = 0x11,
+    _DWORD       = 0x21,
+    _OWORD       = 0x31,
+        
+    _TBYTE       = 0x39,
+    )
+
+FUNC_DEF_MODIF = con.Enum(IdaVarInt32, # TODO: make normal bitwise (it is cases for FUNC_DEF)
+    __NEAR_FUNC      = 0x0C | (0x40 >> 2),
+    __FAR_FUNC       = 0x0C | (0x80 >> 2),
+    __INTERRUPT_FUNC = 0x0C | (0xC0 >> 2),
+)
+
+TINFO_TYPE = con.Enum(IdaVarInt32,
+    FUNC_DEF         = 0x0C,
+
+    # STRUCT   = 0x0d,
+    )
+
+CALLING_CONV = con.Enum(BitsInteger(4),
+    __BAD_CC     =  0x0,
+    __CDECL      =  0x3,
+    __STDCALL    =  0x5,
+    __PASCAL     =  0x6,
+    __FASTCALL   =  0x7,
+    __THISCALL   =  0x8,
+    NOCALL       =  0x9,
+    __USERCALL   =  0xD,
+    __USERPURGE  =  0xE,
+    __USERCALL_2 =  0xF,
+    )
+
+FLAGS = con.Struct(BitsInteger(4),
+    "cc" / CALLING_CONV,
+    "other" / Nibble,
+    )
+
+TInfo_FUNC = con.Struct(
+    "flags" / Byte, # FLAGS,
+    "return_type" / TYPE_DECL,
+    "argc" / IdaVarInt32,
+    # "argv" / Argument[this.argc - 1]
+    )
+
+TInfo = con.Switch(this.type,        
+        {
+            TINFO_TYPE.FUNC_DEF : TInfo_FUNC,
+        },
+        default = None
+    )
+
+
+#######################################
+#
+# Lumina metadata types
+#
+#######################################
+
+MD_TYPE = con.Enum(IdaVarInt32,
+    TYPE_INFO     = 0x1,
+    NOP           = 0x2,
+    CMNT_FUNC_REG = 0x3,
+    CMNT_FUNC_REP = 0x4,
+    CMNT_INST_REG = 0x5,
+    CMNT_INST_REP = 0x6,
+    CMNT_EXTRA    = 0x7,
+    STACK_PTRS    = 0x8,
+    FRAME_DESCR   = 0x9,
+    INST_OPR_REP  = 0xA,
+
+
+    # under construction
+    # STRUCT_SHARE  = 0xFF,
+)
+
+MdMessage_TYPE_INFO = con.Struct(
+    'unk' / Byte,
+    'type' / TINFO_TYPE,
+    )
+
+# Generic MD message 'union'
+MdMessage = con.Switch(this.cmd,
+        {
+            MD_TYPE.TYPE_INFO : MdMessage_TYPE_INFO,
+            # MD_TYPE.NOP : RpcMessage_FAIL,
+            # MD_TYPE.CMNT_FUNC_REG : RpcMessage_NOTIFY,
+            # MD_TYPE.CMNT_FUNC_REP : RpcMessage_HELO,
+            # MD_TYPE.CMNT_INST_REG : RpcMessage_PULL_MD,
+            # MD_TYPE.CMNT_INST_REP : RpcMessage_PULL_MD_RESULT,
+            # MD_TYPE.CMNT_EXTRA : RpcMessage_PUSH_MD,
+            # MD_TYPE.STACK_PTRS : RpcMessage_PUSH_MD_RESULT,
+            # MD_TYPE.FRAME_DESCR : RpcMessage_GET_POP,
+            # MD_TYPE.INST_OPR_REP : RpcMessage_GET_POP_RESULT,
+        
+            # MD_TYPE.STRUCT_SHARE : 
+        },
+        default = None
+    )
+
+# MD packet common header
+md_packet_t = con.Struct(
+    "cmd" / MD_TYPE,
+    "buf" / VarBuff
+    )
+
+def md_message_build(code, **kwargs):
+    """
+    Build and serialize an MD packet
+    """
+    data = RpcMessage.build(kwargs, code = code)
+
+    return md_packet_t.build(Container(code = code,
+        data = data)
+    )
+
+def md_message_parse(source):
+    """
+    Read and deserilize MD message from a file-like object or socket)
+    """
+    packet = None
+    while packet == None or packet.cmd != 0:
+        if isinstance(source, str):
+            # parse source as filename
+            packet = md_packet_t.parse_stream(source)
+        elif isinstance(source, bytes):
+            # parse source as bytes
+            packet = md_packet_t.parse(source)
+        else:
+            # parse source as file-like object
+            if isinstance(source, socket.socket):
+                # construct requires a file-like object with read/write methods:
+                source = source.makefile(mode='rb')
+
+            packet = md_packet_t.parse_stream(source)
+
+        print(packet)
+        message = MdMessage.parse(packet.buf , cmd = packet.cmd)
+        print(message)
+        if message.type == TINFO_TYPE.FUNC_DEF:
+            buf = packet.buf[2:]
+            message = TInfo.parse(buf, type = message.type)
+            print(message)
+
+        break
+    # # # Warning: parsing return a Container object wich hold a io.BytesIO to the socket
+    # # # see https://github.com/construct/construct/issues/852
+    # return packet, message
